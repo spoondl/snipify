@@ -153,6 +153,11 @@ input[type=text]{background:var(--ink);border:1px solid var(--line);color:var(--
 <!-- 1. connect -->
 <section class="panel" id="p-connect" hidden>
   <h2>Connect your Spotify</h2>
+  <div id="quick-login" hidden>
+    <p class="sub">Songs play in full right in this tab. You'll need Spotify Premium.</p>
+    <div class="row"><button class="btn primary" id="quick-connect">Log in with Spotify</button></div>
+  </div>
+  <div id="setup-steps">
   <p class="sub">Spotify plays full songs right in this tab. It needs a free developer app (two minutes, one time) and a Premium account.</p>
   <ol class="steps">
     <li>Open the <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">Spotify Developer Dashboard</a> and choose <b>Create app</b>.</li>
@@ -164,8 +169,9 @@ input[type=text]{background:var(--ink);border:1px solid var(--line);color:var(--
     <input type="text" id="client-id" placeholder="Client ID, e.g. 3f9a…" autocomplete="off" spellcheck="false">
     <button class="btn primary" id="connect">Connect Spotify</button>
   </div>
+  </div>
   <p class="err" id="connect-err" hidden></p>
-  <p class="note">Your Client ID and sign-in stay in this browser. Friends playing on your app must be added under <b>User Management</b> in the dashboard.</p>
+  <p class="note">Your sign-in stays in this browser. This game is in Spotify's test mode, so the app owner has to add each player's Spotify email under <b>User Management</b> before they can log in.</p>
 </section>
 
 <!-- 2. pick playlist -->
@@ -264,6 +270,8 @@ input[type=text]{background:var(--ink);border:1px solid var(--line);color:var(--
 
 <script>
 /* ---------- config ---------- */
+// Your Spotify developer app. Leave "" to have each player enter their own Client ID instead.
+const CLIENT_ID = "bd333ae09e7d4182a83fb28fe525c33f";
 const SCOPES = "streaming user-read-email user-read-private user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative user-library-read";
 const MODES = {
   intro:{name:"Introfy", label:"INTRO", ladder:[1000,2000,4000,7000,11000,16000],
@@ -641,6 +649,8 @@ $("history").innerHTML = "";
 (async function boot(){
   applyMode();
   $("redir").textContent = REDIRECT;
+  if (CLIENT_ID){ $("quick-login").hidden = false; $("setup-steps").hidden = true; }
+  $("quick-connect").onclick = () => startLogin(CLIENT_ID);
   if (load("isf:client")) $("client-id").value = load("isf:client");
   if (location.protocol === "file:"){
     screen("connect");
