@@ -134,6 +134,32 @@ input[type=text]{background:var(--ink);border:1px solid var(--line);color:var(--
 .topline{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center}
 .linkish{background:none;border:0;color:var(--muted);text-decoration:underline;padding:0;font-size:13px}
 .linkish:hover{color:var(--text)}
+
+/* cover art: Spotify's rules — square, uncropped, 4px corners, nothing on top */
+.art{border-radius:4px;object-fit:contain;flex:none;background:var(--ink)}
+.sugg li{flex-direction:row;align-items:center;gap:10px}
+.sugg li .txt{display:flex;flex-direction:column;min-width:0}
+.sugg li .art{width:40px;height:40px}
+.history li{display:flex;align-items:center;gap:8px}
+.history li .art{width:28px;height:28px}
+.chip{display:inline-flex;align-items:center;gap:8px}
+.chip .art{width:22px;height:22px}
+.pl-head{display:flex;align-items:center;gap:12px;min-width:0}
+.pl-head .art{width:52px;height:52px}
+.pl-head > div{min-width:0}
+.reveal-panel{background:#191414}   /* Spotify's fallback "playing view" color */
+.reveal img{border-radius:4px;object-fit:contain}
+
+/* Spotify attribution (official files, never redrawn) */
+.sp-icon{height:21px;width:auto;flex:none}
+.sp-logo{height:24px;width:auto;min-width:70px}
+.btn.spotify{display:inline-flex;align-items:center;gap:10px}
+.playon{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:8px 14px;
+  font-size:12px;font-weight:600;letter-spacing:.1em;color:var(--text);text-decoration:none;margin-top:10px}
+.playon:hover{border-color:var(--text)}
+.attrib{display:flex;align-items:center;justify-content:center;gap:12px;color:var(--muted);font-size:13px;padding-top:4px}
+.attrib .sp-logo{padding:6px}
+.sp-fallback{font-weight:700;color:var(--text)}
 </style>
 </head>
 <body>
@@ -155,7 +181,7 @@ input[type=text]{background:var(--ink);border:1px solid var(--line);color:var(--
   <h2>Connect your Spotify</h2>
   <div id="quick-login" hidden>
     <p class="sub">Songs play in full right in this tab. You'll need Spotify Premium.</p>
-    <div class="row"><button class="btn primary" id="quick-connect">Log in with Spotify</button></div>
+    <div class="row"><button class="btn primary spotify" id="quick-connect"><img class="sp-icon" src="spotify-icon-black.png" alt="" onerror="this.remove()">Log in with Spotify</button></div>
   </div>
   <div id="setup-steps">
   <p class="sub">Spotify plays full songs right in this tab. It needs a free developer app (two minutes, one time) and a Premium account.</p>
@@ -192,9 +218,12 @@ input[type=text]{background:var(--ink);border:1px solid var(--line);color:var(--
 <!-- 3. game -->
 <section id="p-game" hidden style="display:flex;flex-direction:column;gap:20px">
   <div class="topline">
-    <div>
-      <div class="label">Now guessing from</div>
-      <div style="font-weight:600;font-size:17px" id="pl-name">—</div>
+    <div class="pl-head">
+      <img class="art" id="pl-art" alt="" hidden>
+      <div>
+        <div class="label">Now guessing from</div>
+        <div style="font-weight:600;font-size:17px" id="pl-name">—</div>
+      </div>
     </div>
     <div class="row">
       <button class="linkish" id="change-pl">Change playlist</button>
@@ -245,13 +274,14 @@ input[type=text]{background:var(--ink);border:1px solid var(--line);color:var(--
     <p class="flash" id="flash">Press play (or Space) to hear the clip.</p>
   </div>
 
-  <div class="panel" id="reveal-panel" hidden>
+  <div class="panel reveal-panel" id="reveal-panel" hidden>
     <div class="reveal">
       <img id="r-art" alt="">
       <div class="t">
         <div class="verdict" id="r-verdict"></div>
         <div class="song" id="r-song"></div>
         <div class="artist" id="r-artist"></div>
+        <a class="playon" id="r-open" target="_blank" rel="noopener"><img class="sp-icon" src="spotify-icon-white.png" alt="" onerror="this.remove()">PLAY ON SPOTIFY</a>
       </div>
       <button class="btn primary" id="next">Next song</button>
     </div>
@@ -266,6 +296,11 @@ input[type=text]{background:var(--ink);border:1px solid var(--line);color:var(--
   <p class="note" id="player-status">Starting the in-browser player…</p>
 </section>
 
+<footer class="attrib">
+  Music, cover art and playback from
+  <img class="sp-logo" src="spotify-logo-white.png" alt="Spotify" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'sp-fallback',textContent:'Spotify'}))">
+</footer>
+
 </div>
 
 <script>
@@ -279,7 +314,8 @@ const MODES = {
   snip: {name:"Snipify", label:"SNIP", ladder:[2000,3000,5000,8000,12000,16000],
          tag:"A random slice from anywhere in the song. Each miss lets that slice run longer."}
 };
-const REDIRECT = location.origin + location.pathname;
+// Same address whether someone opens /snipify/ or /snipify/index.html
+const REDIRECT = location.origin + location.pathname.replace(/index\.html$/, "");
 
 /* ---------- tiny helpers ---------- */
 const $ = id => document.getElementById(id);
@@ -295,6 +331,95 @@ const norm = s => String(s).toLowerCase()
   .normalize("NFD").replace(/[̀-ͯ]/g, "")
   .replace(/&/g,"and").replace(/[^a-z0-9]+/g, "");
 function show(el, msg){ el.textContent = msg; el.hidden = !msg; }
+
+/* ---------- forgiving matcher ---------- */
+// A typed guess counts when it's this similar (0–1) to a song title.
+const HIT = 0.75;
+// Shorthand people type, applied to both guesses and titles so they meet in the middle.
+const SWAP = {u:"you",ya:"you",yu:"you",ur:"your",yr:"your",r:"are",n:"and",an:"and",luv:"love",tha:"the",da:"the",
+  bout:"about",cuz:"because",coz:"because",cos:"because",bc:"because",pt:"part",w:"with",thru:"through",tho:"though",
+  nite:"night",tonite:"tonight",lil:"little",ok:"okay",feat:"",ft:"",featuring:"",
+  mister:"mr",doctor:"dr",saint:"st",vs:"versus",
+  "1":"one","2":"two","3":"three","4":"four","5":"five","6":"six","7":"seven","8":"eight","9":"nine","10":"ten"};
+function words(s, stripExtras){
+  let t = String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  if (stripExtras) t = t.replace(/\s+-\s+.*$/, "").replace(/[\(\[].*?[\)\]]/g, " ");  // " - Remastered", "(feat. X)"
+  t = t.replace(/['’`]/g, "").replace(/&/g, " and ").replace(/\$/g, "s");
+  return t.split(/[^a-z0-9]+/).filter(Boolean).map(w => (w in SWAP ? SWAP[w] : w)).filter(Boolean);
+}
+const compact = ws => ws.join("");
+const noThe = ws => (ws[0] === "the" || ws[0] === "a") && ws.length > 1 ? ws.slice(1) : ws;
+function lev(a, b){
+  if (a === b) return 0; if (!a.length) return b.length; if (!b.length) return a.length;
+  let prev = Array.from({length:b.length+1}, (_, i) => i);
+  for (let i = 1; i <= a.length; i++){
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++)
+      cur[j] = Math.min(prev[j] + 1, cur[j-1] + 1, prev[j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+function makeOpt(t){
+  const core = words(t.name, true), full = words(t.name, false);
+  const vars = [...new Set([core, full, noThe(core), noThe(full)].map(compact).filter(Boolean))];
+  const inis = [...new Set([core, full].map(ws => ws.map(w => w[0]).join("")))];
+  return {name:t.name, artist:t.artist, thumb:t.thumb || "", key:norm(t.name), vars, inis,
+          tWords:[...new Set([...core, ...full])], aWords:words(t.artist, false)};
+}
+function simCompact(qc, opt){
+  if (!qc) return 0;
+  let s = 0;
+  for (const v of opt.vars){
+    if (qc === v) return 1;
+    s = Math.max(s, 1 - lev(qc, v) / Math.max(qc.length, v.length));
+    // typed the start of a long title: "bohemian" for Bohemian Rhapsody
+    if (v.startsWith(qc) && qc.length >= Math.max(4, Math.ceil(v.length * 0.5))) s = Math.max(s, 0.9);
+  }
+  // initials: "dsmn" for Don't Stop Me Now
+  for (const ini of opt.inis) if (ini.length >= 3 && qc === ini) s = Math.max(s, 0.95);
+  return s;
+}
+function guessScore(q, opt){
+  const qw = words(q, false);
+  if (!qw.length) return 0;
+  const cands = [qw];
+  const parts = q.split(/\s+(?:-|–|—|by)\s+/i);          // "song - artist", "song by artist"
+  if (parts.length > 1) cands.push(words(parts[0], false));
+  const aw = new Set(opt.aWords);                           // "queen bohemian rhapsody"
+  const noArtist = qw.filter(w => !aw.has(w));
+  if (noArtist.length && noArtist.length < qw.length) cands.push(noArtist);
+  let best = 0;
+  for (const c of cands) best = Math.max(best, simCompact(compact(c), opt), simCompact(compact(noThe(c)), opt));
+  return best;
+}
+function bestMatch(q){
+  let best = null;
+  for (const opt of S.options){ const score = guessScore(q, opt); if (!best || score > best.score) best = {opt, score}; }
+  return best;
+}
+const sameSong = (a, b) => a.key === b.key;
+// Autocomplete: every typed word should loosely match some word in the title or artist.
+function wordMatch(w, pool){
+  let best = 0;
+  const tol = w.length >= 7 ? 2 : w.length >= 4 ? 1 : 0;
+  for (const ow of pool){
+    if (ow.startsWith(w)) return 1;
+    if (tol && (lev(w, ow) <= tol || lev(w, ow.slice(0, w.length)) <= tol)) best = 0.75;
+  }
+  return best;
+}
+function rankOptions(q){
+  const qw = words(q, false);
+  if (!qw.length) return [];
+  return S.options.map(o => {
+    const pool = [...o.tWords, ...o.aWords];
+    const all = qw.reduce((s, w) => s + wordMatch(w, pool), 0) / qw.length;
+    const title = qw.reduce((s, w) => s + wordMatch(w, o.tWords), 0) / qw.length;
+    const score = Math.max(all + title * 0.05, guessScore(q, o));
+    return {o, score};
+  }).filter(r => r.score >= 0.7).sort((a, b) => b.score - a.score).map(r => r.o);
+}
 
 /* ---------- auth (PKCE) ---------- */
 function b64url(buf){ return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); }
@@ -395,7 +520,9 @@ async function showPicker(){
       const b = document.createElement("button");
       b.className = "chip" + (mine ? "" : " dim"); b.dataset.id = p.id;
       b.title = mine ? p.name : p.name + " (not yours, so Spotify may hide its songs)";
-      b.textContent = p.name; chips.appendChild(b);
+      const img = smallestImage(p.images);
+      b.innerHTML = (img ? `<img class="art" src="${esc(img)}" alt="">` : "") + `<span>${esc(p.name)}</span>`;
+      chips.appendChild(b);
     });
   } catch (e) { show($("pl-err"), "Couldn't list your playlists: " + e.message); }
 }
@@ -403,16 +530,23 @@ function toTrack(t){
   if (!t || t.type !== "track" || t.is_local || !t.uri) return null;
   const imgs = (t.album && t.album.images) || [];
   return {id:t.id, uri:t.uri, name:t.name, artist:(t.artists||[]).map(a=>a.name).join(", "),
-          duration:t.duration_ms, art:(imgs[1]||imgs[0]||{}).url || ""};
+          album:(t.album && t.album.name) || "", duration:t.duration_ms,
+          art:(imgs.find(i => i.width && i.width <= 320) || imgs[0] || {}).url || "",
+          thumb:smallestImage(imgs)};
+}
+function smallestImage(imgs){
+  if (!imgs || !imgs.length) return "";
+  const sized = imgs.filter(i => i.width).sort((a,b) => a.width - b.width);
+  return (sized.find(i => i.width >= 60) || sized.at(-1) || imgs[0]).url || "";
 }
 async function loadPlaylist(id){
   show($("pl-err"), ""); $("pl-load").disabled = true; $("pl-load").textContent = "Loading…";
   try {
-    let name, url, list = [];
+    let name, url, cover = "", list = [];
     if (id === "liked"){ name = "Liked Songs"; url = "/me/tracks?limit=50"; }
     else {
       const p = await api(`/playlists/${id}`);
-      name = p.name; url = `/playlists/${id}/items?limit=50`;
+      name = p.name; cover = smallestImage(p.images); url = `/playlists/${id}/items?limit=50`;
     }
     while (url){
       const page = await api(url);
@@ -425,9 +559,10 @@ async function loadPlaylist(id){
     S.playlist = {id, name}; S.tracks = list;
     // guess options: one per distinct title + artist
     const m = new Map(); list.forEach(t => { const k = norm(t.name) + "|" + norm(t.artist); if (!m.has(k)) m.set(k, t); });
-    S.options = [...m.values()].map(t => ({name:t.name, artist:t.artist, key:norm(t.name), hay:(t.name + " " + t.artist).toLowerCase()}));
+    S.options = [...m.values()].map(makeOpt);
     save("isf:lastPlaylist", id);
     $("pl-name").textContent = `${name} · ${list.length} songs`;
+    $("pl-art").hidden = !cover; if (cover) $("pl-art").src = cover;
     screen("game"); renderStats(); newRound();
   } catch (e) {
     show($("pl-err"), e.status === 403 || e.status === 404
@@ -500,7 +635,6 @@ function newRound(){
   const run = getRun();
   const left = S.tracks.filter(t => !run.results[t.id]);
   $("reveal-panel").hidden = true; $("done-panel").hidden = true; $("guess-panel").hidden = false;
-  $("disc").querySelector("img")?.remove(); $("disc-label").hidden = false;
   if (!left.length){
     S.track = null; S.over = true; $("guess-panel").hidden = true; $("done-panel").hidden = false;
     const hits = Object.values(run.results).filter(v => v === "hit").length;
@@ -530,12 +664,13 @@ function renderRound(){
   $("attempts").innerHTML = lad.map((_, i) =>
     `<div class="att ${S.marks[i] || (i === S.attempt && !S.over ? "now" : "")}"></div>`).join("");
 }
-function addHistory(text){
+function addHistory(text, art){
   const li = document.createElement("li");
-  li.innerHTML = `<span class="x">✕</span>${esc(text)}`; $("history").appendChild(li);
+  li.innerHTML = `<span class="x">✕</span>` + (art ? `<img class="art" src="${esc(art)}" alt="">` : "") + `<span>${esc(text)}</span>`;
+  $("history").appendChild(li);
 }
-function miss(kind, text){
-  S.marks[S.attempt] = kind; addHistory(text);
+function miss(kind, text, art){
+  S.marks[S.attempt] = kind; addHistory(text, art);
   S.attempt++;
   if (S.attempt >= 6) return endRound(false);
   flash(kind === "skip" ? `Skipped. You now hear ${clipLen()/1000}s.` : `Not that one. You now hear ${clipLen()/1000}s.`, "bad");
@@ -543,15 +678,20 @@ function miss(kind, text){
 }
 function submitGuess(opt){
   if (S.over || !S.track) return;
+  const answer = makeOpt(S.track);
   if (!opt){
-    const q = norm($("guess").value);
-    if (!q) return;
-    opt = S.options.find(o => o.key === q) || null;
-    if (!opt){ flash("Pick a song from the list so the guess can be checked.", "bad"); return; }
+    const q = $("guess").value;
+    if (!q.trim()) return;
+    // close enough to the real answer (typos, abbreviations, initials, "song by artist"),
+    // and no other song in the playlist is an even closer match?
+    const best = bestMatch(q), mine = guessScore(q, answer);
+    if (mine >= HIT && (!best || mine >= best.score)) { $("guess").value = ""; closeSugg(); return endRound(true); }
+    if (!best || best.score < HIT){ flash("No song in this playlist matches that. Keep typing or pick from the list.", "bad"); return; }
+    opt = best.opt;
   }
   $("guess").value = ""; closeSugg();
-  if (opt.key === norm(S.track.name)) endRound(true);
-  else miss("miss", `${opt.name} — ${opt.artist}`);
+  if (sameSong(opt, answer)) endRound(true);
+  else miss("miss", `${opt.name} — ${opt.artist}`, opt.thumb);
 }
 function endRound(win){
   S.over = true; clearTimeout(S.stopTimer); cancelAnimationFrame(S.raf);
@@ -571,7 +711,8 @@ function endRound(win){
   $("r-verdict").className = "verdict " + (win ? "win" : "lose");
   $("r-song").textContent = S.track.name; $("r-artist").textContent = S.track.artist;
   $("r-art").src = S.track.art; $("r-art").hidden = !S.track.art;
-  if (S.track.art){ const img = new Image(); img.src = S.track.art; img.alt = ""; $("disc").appendChild(img); $("disc-label").hidden = true; }
+  $("r-art").alt = S.track.album ? "Cover of " + S.track.album : "";
+  $("r-open").href = "https://open.spotify.com/track/" + S.track.id;
   $("guess-panel").hidden = true; $("reveal-panel").hidden = false;
   renderRound(); renderStats(); $("next").focus();
 }
@@ -588,16 +729,18 @@ function flash(msg, kind){ const f = $("flash"); f.textContent = msg; f.classNam
 /* ---------- autocomplete ---------- */
 let suggIdx = -1, suggList = [];
 function openSugg(q){
-  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-  suggList = words.length ? S.options.filter(o => words.every(w => o.hay.includes(w))).slice(0, 8) : [];
-  suggIdx = suggList.length ? 0 : -1;
+  suggList = rankOptions(q).slice(0, 8);
+  suggIdx = suggList.length ? 0 : -1; S.arrowed = false;
   const ul = $("sugg");
-  ul.innerHTML = suggList.map((o,i) => `<li role="option" data-i="${i}" aria-selected="${i===suggIdx}"><span>${esc(o.name)}</span><small>${esc(o.artist)}</small></li>`).join("");
+  ul.innerHTML = suggList.map((o,i) => `<li role="option" data-i="${i}" aria-selected="${i===suggIdx}">`
+    + (o.thumb ? `<img class="art" src="${esc(o.thumb)}" alt="">` : "")
+    + `<span class="txt"><span>${esc(o.name)}</span><small>${esc(o.artist)}</small></span></li>`).join("");
   ul.hidden = !suggList.length; $("guess").setAttribute("aria-expanded", !ul.hidden);
 }
 function closeSugg(){ $("sugg").hidden = true; suggList = []; suggIdx = -1; $("guess").setAttribute("aria-expanded","false"); }
 function moveSugg(d){
   if (!suggList.length) return;
+  S.arrowed = true;
   suggIdx = (suggIdx + d + suggList.length) % suggList.length;
   [...$("sugg").children].forEach((li,i) => li.setAttribute("aria-selected", i === suggIdx));
   $("sugg").children[suggIdx].scrollIntoView({block:"nearest"});
@@ -629,7 +772,8 @@ $("play").onclick = playClip;
 $("skip").onclick = () => { if (!S.over && S.track) { stopClip(); miss("skip", "Skipped"); } };
 $("next").onclick = () => { $("history").innerHTML = ""; newRound(); setTimeout(playClip, 50); };
 $("vol").oninput = e => S.player && S.player.setVolume(e.target.value/100);
-$("submit").onclick = () => submitGuess(suggIdx >= 0 && suggList.length && $("guess").value ? suggList[suggIdx] : null);
+// Enter submits what you typed (fuzzy-matched), unless you arrowed to a specific suggestion.
+$("submit").onclick = () => submitGuess(S.arrowed && suggIdx >= 0 && suggList.length ? suggList[suggIdx] : null);
 $("guess").oninput = e => openSugg(e.target.value);
 $("guess").onkeydown = e => {
   if (e.key === "ArrowDown"){ e.preventDefault(); moveSugg(1); }
